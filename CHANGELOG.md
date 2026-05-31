@@ -36,6 +36,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   aliases are available for `jj workspace list`, and `WorkspaceRef.root()` now
   returns an optional `FsPath` value.
 
+* Added `builtin_log()` revset alias for the built-in default `jj log` revset.
+  `revsets.log` now defaults to `builtin_log()`, so custom log revsets can
+  reuse the built-in default instead of copying its full expression.
+
 ### Fixed bugs
 
 * Recursive alias definitions are detected more precisely. jj can now expand
