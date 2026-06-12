@@ -52,17 +52,13 @@ fn test_merge_operations_deep_criss_cross() -> TestResult {
         .env(CHILD_ENV, "1")
         .env("RUST_MIN_STACK", CHILD_STACK_SIZE.to_string())
         .output()?;
-    // TODO: This test should pass!!! Fix the stack overflow and remove the if false
-    // guard.
-    if false {
-        assert!(
-            output.status.success(),
-            "deep criss-cross merge failed with {num_levels} levels and {CHILD_STACK_SIZE} byte \
-             child stack\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-    }
+    assert!(
+        output.status.success(),
+        "deep criss-cross merge failed with {num_levels} levels and {CHILD_STACK_SIZE} byte child \
+         stack\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
     Ok(())
 }
 
