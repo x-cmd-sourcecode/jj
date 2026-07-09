@@ -19,6 +19,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 * New `merge_point()` revset function which (similar to `fork_point`) finds the
   point where multiple branches merge.
 
+ * `jj run` now processes revisions from oldest to newest by default. The start
+   order is guaranteed: each revision begins execution only after the previous
+   one has started, even with `--jobs` higher than 1.
+
 ### Fixed bugs
 
 * Recursive alias definitions are detected more precisely. jj can now expand

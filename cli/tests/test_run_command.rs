@@ -1383,10 +1383,10 @@ fn test_run_order() {
         "-c",
         "echo $JJ_CHANGE_ID",
     ]).success().stdout,@"
-    zsuskulnrvyrovkzqrwmxqlsskqntxvp
-    kkmpptxzrspxrzommnulwmwkkqwworpl
-    rlvkpnrzqnoowoytxnquwvuryrwnrmlp
     qpvuntsmwlqtpsluzzsnyyzlmlwvmlnu
+    rlvkpnrzqnoowoytxnquwvuryrwnrmlp
+    kkmpptxzrspxrzommnulwmwkkqwworpl
+    zsuskulnrvyrovkzqrwmxqlsskqntxvp
     [EOF]
     ");
 }
