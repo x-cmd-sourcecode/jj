@@ -19,6 +19,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 * New `merge_point()` revset function which (similar to `fork_point`) finds the
   point where multiple branches merge.
 
+* `jj run` gained a `--passthrough` flag that connects the subprocess's
+  stdout/stderr directly to the terminal instead of capturing output.
+
 ### Fixed bugs
 
 * Recursive alias definitions are detected more precisely. jj can now expand
