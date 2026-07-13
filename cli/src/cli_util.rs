@@ -778,14 +778,14 @@ pub async fn merge_operations(
     transaction_description: Option<&str>,
     transaction_attributes: impl IntoIterator<Item = (String, String)>,
 ) -> Result<Operation, CommandError> {
-    let (merged_repo, num_rebased) = Transaction::merge_operations(
-        repo_loader,
-        operations,
-        workspace_name,
-        transaction_description,
-        transaction_attributes,
-    )
-    .await?;
+    let (merged_repo, num_rebased) = repo_loader
+        .merge_operations(
+            operations,
+            workspace_name,
+            transaction_description,
+            transaction_attributes,
+        )
+        .await?;
     if let Some(ui) = ui
         && num_rebased > 0
     {

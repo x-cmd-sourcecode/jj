@@ -26,7 +26,6 @@ use jj_lib::ref_name::RemoteRefSymbol;
 use jj_lib::ref_name::WorkspaceName;
 use jj_lib::ref_name::WorkspaceNameBuf;
 use jj_lib::repo::Repo as _;
-use jj_lib::transaction::Transaction;
 use maplit::btreemap;
 use maplit::hashset;
 use pollster::FutureExt as _;
@@ -760,18 +759,19 @@ fn test_merge_three_operations() -> TestResult {
     std::thread::sleep(Duration::from_millis(1));
     let repo_d = tx_d.commit("D").block_on()?;
 
-    let (repo_e, _num_rebased) = Transaction::merge_operations(
-        repo_b.loader(),
-        vec![
-            repo_b.operation().clone(),
-            repo_c.operation().clone(),
-            repo_d.operation().clone(),
-        ],
-        None,
-        Some("merge B, C, D"),
-        [],
-    )
-    .block_on()?;
+    let (repo_e, _num_rebased) = repo_b
+        .loader()
+        .merge_operations(
+            vec![
+                repo_b.operation().clone(),
+                repo_c.operation().clone(),
+                repo_d.operation().clone(),
+            ],
+            None,
+            Some("merge B, C, D"),
+            [],
+        )
+        .block_on()?;
     let operation_e = repo_e.operation().clone();
     let view_e = operation_e.view().block_on()?;
     assert_eq!(
@@ -829,23 +829,25 @@ fn test_merge_views_criss_cross(op_b_first: bool) -> TestResult {
         (repo_b, repo_c)
     };
 
-    let (repo_d, _num_rebased) = Transaction::merge_operations(
-        repo_b.loader(),
-        vec![repo_b.operation().clone(), repo_c.operation().clone()],
-        None,
-        Some("D"),
-        [],
-    )
-    .block_on()?;
+    let (repo_d, _num_rebased) = repo_b
+        .loader()
+        .merge_operations(
+            vec![repo_b.operation().clone(), repo_c.operation().clone()],
+            None,
+            Some("D"),
+            [],
+        )
+        .block_on()?;
 
-    let (_repo_e, _num_rebased) = Transaction::merge_operations(
-        repo_b.loader(),
-        vec![repo_b.operation().clone(), repo_c.operation().clone()],
-        None,
-        Some("E"),
-        [],
-    )
-    .block_on()?;
+    let (_repo_e, _num_rebased) = repo_b
+        .loader()
+        .merge_operations(
+            vec![repo_b.operation().clone(), repo_c.operation().clone()],
+            None,
+            Some("E"),
+            [],
+        )
+        .block_on()?;
 
     let mut tx_f = repo_d.start_transaction();
     let commit_m = tx_f
@@ -909,24 +911,26 @@ fn test_merge_operations_back_to_back_criss_cross() -> TestResult {
     let repo_c = tx_c.commit("TXC").block_on()?;
     std::thread::sleep(Duration::from_millis(1));
 
-    let (repo_d, _num_rebased) = Transaction::merge_operations(
-        repo_b.loader(),
-        vec![repo_b.operation().clone(), repo_c.operation().clone()],
-        None,
-        Some("merge B, C"),
-        [],
-    )
-    .block_on()?;
+    let (repo_d, _num_rebased) = repo_b
+        .loader()
+        .merge_operations(
+            vec![repo_b.operation().clone(), repo_c.operation().clone()],
+            None,
+            Some("merge B, C"),
+            [],
+        )
+        .block_on()?;
     std::thread::sleep(Duration::from_millis(1));
 
-    let (repo_e, _num_rebased) = Transaction::merge_operations(
-        repo_b.loader(),
-        vec![repo_b.operation().clone(), repo_c.operation().clone()],
-        None,
-        Some("merge B, C again, concurrently"),
-        [],
-    )
-    .block_on()?;
+    let (repo_e, _num_rebased) = repo_b
+        .loader()
+        .merge_operations(
+            vec![repo_b.operation().clone(), repo_c.operation().clone()],
+            None,
+            Some("merge B, C again, concurrently"),
+            [],
+        )
+        .block_on()?;
     std::thread::sleep(Duration::from_millis(1));
 
     let view_d = repo_d.operation().view().block_on()?;
@@ -969,24 +973,26 @@ fn test_merge_operations_back_to_back_criss_cross() -> TestResult {
         commit_l2_prime.parent_ids()[0],
     );
 
-    let (repo_f, _num_rebased) = Transaction::merge_operations(
-        repo_d.loader(),
-        vec![repo_d.operation().clone(), repo_e.operation().clone()],
-        None,
-        Some("merge D, E"),
-        [],
-    )
-    .block_on()?;
+    let (repo_f, _num_rebased) = repo_d
+        .loader()
+        .merge_operations(
+            vec![repo_d.operation().clone(), repo_e.operation().clone()],
+            None,
+            Some("merge D, E"),
+            [],
+        )
+        .block_on()?;
     std::thread::sleep(Duration::from_millis(1));
 
-    let (repo_g, _num_rebased) = Transaction::merge_operations(
-        repo_d.loader(),
-        vec![repo_d.operation().clone(), repo_e.operation().clone()],
-        None,
-        Some("merge D, E again, concurrently"),
-        [],
-    )
-    .block_on()?;
+    let (repo_g, _num_rebased) = repo_d
+        .loader()
+        .merge_operations(
+            vec![repo_d.operation().clone(), repo_e.operation().clone()],
+            None,
+            Some("merge D, E again, concurrently"),
+            [],
+        )
+        .block_on()?;
     std::thread::sleep(Duration::from_millis(1));
 
     let view_f = repo_f.operation().view().block_on()?;
@@ -994,14 +1000,15 @@ fn test_merge_operations_back_to_back_criss_cross() -> TestResult {
     assert_eq!(view_f.heads().len(), 2);
     assert_eq!(view_g.heads().len(), 2);
 
-    let (repo_h, _num_rebased) = Transaction::merge_operations(
-        repo_f.loader(),
-        vec![repo_f.operation().clone(), repo_g.operation().clone()],
-        None,
-        Some("merge F, G"),
-        [],
-    )
-    .block_on()?;
+    let (repo_h, _num_rebased) = repo_f
+        .loader()
+        .merge_operations(
+            vec![repo_f.operation().clone(), repo_g.operation().clone()],
+            None,
+            Some("merge F, G"),
+            [],
+        )
+        .block_on()?;
     assert_eq!(repo_h.view().heads().len(), 2);
 
     Ok(())

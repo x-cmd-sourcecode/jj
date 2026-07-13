@@ -14,11 +14,8 @@
 
 #![expect(missing_docs)]
 
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
-use itertools::Itertools as _;
 use thiserror::Error;
 
 use crate::backend::Timestamp;
@@ -28,10 +25,8 @@ use crate::op_heads_store::OpHeadsStore;
 use crate::op_heads_store::OpHeadsStoreError;
 use crate::op_store;
 use crate::op_store::OpStoreError;
-use crate::op_store::OperationId;
 use crate::op_store::OperationMetadata;
 use crate::op_store::TimestampRange;
-use crate::op_walk;
 use crate::operation::Operation;
 use crate::ref_name::WorkspaceName;
 use crate::repo::MutableRepo;
@@ -86,6 +81,10 @@ impl Transaction {
         self.mut_repo.base_repo()
     }
 
+    pub fn parent_ops(&self) -> &[Operation] {
+        &self.parent_ops
+    }
+
     pub fn set_attribute(&mut self, key: String, value: String) {
         self.op_metadata.attributes.insert(key, value);
     }
@@ -98,133 +97,9 @@ impl Transaction {
         &mut self.mut_repo
     }
 
-    /// Merges the given `operations`. Returns the merged repo and the number of
-    /// rebased commits. If `operations` is empty returns the root repo. If
-    /// `operations` has a single entry, returns that entry's repo. Otherwise
-    /// an actual merge happens. The new operation is not published.
-    pub async fn merge_operations(
-        repo_loader: &RepoLoader,
-        operations: Vec<Operation>,
-        workspace_name: Option<&WorkspaceName>,
-        transaction_description: Option<&str>,
-        transaction_attributes: impl IntoIterator<Item = (String, String)>,
-    ) -> Result<(Arc<ReadonlyRepo>, usize), RepoLoaderError> {
-        // IMPLEMENTATION NOTE: This used to be implemented as a much simple
-        // recursive method, but unfortunately due to the async nature of the
-        // method itself and its dependencies, that leads to stack-overflow in
-        // some cases. See https://github.com/jj-vcs/jj/pull/9586 for more
-        // details. Ideally the Rust compiler gets better at dealing with this,
-        // then we could go back to the recursive implementation.
-        match &operations[..] {
-            [] => {
-                let root_operation = repo_loader.root_operation().await;
-                let root_repo = repo_loader.load_at(&root_operation).await?;
-                return Ok((root_repo, 0));
-            }
-            [op] => {
-                let repo = repo_loader.load_at(op).await?;
-                return Ok((repo, 0));
-            }
-            _ => {}
-        }
-
-        let mut num_rebased = 0;
-        let to_operation_ids =
-            |ops: &[Operation]| ops.iter().map(|op| op.id().clone()).collect_vec();
-        let operation_ids = to_operation_ids(&operations);
-
-        // Caches the result of merging some operations.
-        let mut merged_operations: HashMap<Vec<OperationId>, Operation> = HashMap::new();
-        // Caches the result of op_walk::closest_common_ancestors invocations. Keyed by
-        // the arguments to that method.
-        let mut closest_common_ancestors: HashMap<_, Vec<Operation>> = HashMap::new();
-
-        let transaction_attributes = transaction_attributes.into_iter().collect_vec();
-        let tx = start_repo_transaction(
-            &repo_loader.load_at(&operations[0]).await?,
-            workspace_name,
-            transaction_attributes.clone(),
-        );
-        let mut stack = vec![(1, operations, tx)];
-
-        while let Some((index, operations, mut tx)) = stack.pop() {
-            assert!(operations.len() > 1);
-            assert!(index <= operations.len());
-            if index == operations.len() {
-                // We are done processing the operations, but there is more work on the stack.
-                // Commit the transaction and cache the result.
-                let tx_description = transaction_description.map_or_else(
-                    || format!("merge {} operations", operations.len()),
-                    |tx_description| tx_description.to_string(),
-                );
-                let merged_repo = tx.write(tx_description).await?.leave_unpublished();
-                merged_operations.insert(
-                    to_operation_ids(&operations),
-                    merged_repo.operation().clone(),
-                );
-                continue;
-            }
-
-            let other_op = &operations[index];
-
-            // Get the ancestor operations between the operations we have merged so far
-            // (represented by `tx.parent_ops()`) and the next operation to merge
-            // (`other_op`).
-            let ancestor_ops = match closest_common_ancestors
-                .entry((to_operation_ids(&tx.parent_ops), other_op.id().clone()))
-            {
-                Entry::Occupied(occupied_entry) => occupied_entry.into_mut(),
-                Entry::Vacant(vacant_entry) => {
-                    let ancestor_ops = op_walk::closest_common_ancestors(
-                        tx.parent_ops.iter().cloned(),
-                        [other_op.clone()],
-                    )
-                    .await?;
-                    vacant_entry.insert(ancestor_ops.clone())
-                }
-            };
-            assert!(!ancestor_ops.is_empty());
-
-            let ancestor_op = if let [ancestor_op] = ancestor_ops.as_slice() {
-                // There is a single common ancestor.
-                Some(ancestor_op)
-            } else {
-                // There are multiple common ancestors, check to see if we have cached their
-                // merge result.
-                let ancestor_op_ids = ancestor_ops.iter().map(|op| op.id().clone()).collect_vec();
-                merged_operations.get(&ancestor_op_ids)
-            };
-
-            if let Some(merged_ancestor_op) = ancestor_op {
-                // We have the merge of the ancestor operations. We can proceed to merge with
-                // other_op.
-                num_rebased += tx.merge_operation(merged_ancestor_op, other_op).await?;
-                // Push state on the stack to continue merging the rest of the operations.
-                stack.push((index + 1, operations, tx));
-                continue;
-            }
-
-            // We have to merge the ancestor ops.
-            // We first push the current state to the stack so that after we merge the
-            // ancestor ops, we can continue merging the rest of the operations.
-            stack.push((index, operations, tx));
-            // Then we push the ancestor ops to the stack so that we can merge them first.
-            // We need to start a separate transaction for this.
-            let new_tx = repo_loader
-                .load_at(&ancestor_ops[0])
-                .await?
-                .start_transaction();
-            stack.push((1, ancestor_ops.clone(), new_tx));
-        }
-
-        // We are all done! The result should be in the cache.
-        let merged_operation = merged_operations.get(&operation_ids).cloned().unwrap();
-        Ok((repo_loader.load_at(&merged_operation).await?, num_rebased))
-    }
-
     /// Merges other_op into this transaction's base repo, using base_op as the
     /// merge base. Returns the number of rebased descendants.
-    async fn merge_operation(
+    pub async fn merge_operation(
         &mut self,
         base_op: &Operation,
         other_op: &Operation,
